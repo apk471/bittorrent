@@ -199,6 +199,42 @@ func TestDecodeNestedStructures(t *testing.T) {
 	}
 }
 
+func TestDecodeDictWithListThenKey(t *testing.T) {
+	input := []byte("d5:filesl8:file.txt9:image.jpge4:sizei2048ee")
+	v, err := DecodeBytes(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, ok := v.(Dict)
+	if !ok {
+		t.Fatalf("expected Dict, got %T", v)
+	}
+	if len(d) != 2 {
+		t.Fatalf("expected 2 keys, got %d", len(d))
+	}
+	if _, ok := d["size"]; !ok {
+		t.Fatal("key 'size' is missing!")
+	}
+	if _, ok := d["files"]; !ok {
+		t.Fatal("key 'files' is missing!")
+	}
+}
+
+func TestDecodeDictWithIntThenList(t *testing.T) {
+	input := []byte("d4:name10:ubuntu.iso6:lengthi123456e5:filesl9:part1.iso9:part2.isoee")
+	v, err := DecodeBytes(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, ok := v.(Dict)
+	if !ok {
+		t.Fatalf("expected Dict, got %T", v)
+	}
+	if len(d) != 3 {
+		t.Fatalf("expected 3 keys, got %d", len(d))
+	}
+}
+
 func TestRoundTripInt(t *testing.T) {
 	orig := Int(12345)
 	var buf bytes.Buffer
