@@ -184,6 +184,20 @@ func (t *TorrentFile) TotalSize() int64 {
 	return total
 }
 
+func (t *TorrentFile) TrackerURL() string {
+	if t.Announce != "" {
+		return t.Announce
+	}
+	if len(t.AnnounceList) > 0 && len(t.AnnounceList[0]) > 0 {
+		return t.AnnounceList[0][0]
+	}
+	return ""
+}
+
+func (t *TorrentFile) IsTrackerless() bool {
+	return t.TrackerURL() == ""
+}
+
 func (t *TorrentFile) PieceLength(index int) int64 {
 	num := t.NumPieces()
 	if index < 0 || index >= num {

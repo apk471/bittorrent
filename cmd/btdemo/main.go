@@ -39,8 +39,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	trackerURL := tf.TrackerURL()
+
 	fmt.Printf("Name:        %s\n", tf.Info.Name)
-	fmt.Printf("Tracker:     %s\n", tf.Announce)
+	if trackerURL != "" {
+		fmt.Printf("Tracker:     %s\n", trackerURL)
+	} else {
+		fmt.Printf("Tracker:     (trackerless - DHT)\n")
+	}
 	if tf.IsSingleFile() {
 		fmt.Printf("Size:        %d bytes\n", tf.TotalSize())
 	} else {
@@ -58,10 +64,15 @@ func main() {
 		fmt.Printf("Comment:     %s\n", tf.Comment)
 	}
 
-	client := tracker.NewTrackerClient()
-	fmt.Printf("\nAnnouncing to %s ...\n", tf.Announce)
+	if trackerURL == "" {
+		fmt.Println("\nNo tracker URL found. DHT/PEX support not yet implemented.")
+		return
+	}
 
-	resp, err := client.Announce(tf.Announce, &tracker.AnnounceRequest{
+	client := tracker.NewTrackerClient()
+	fmt.Printf("\nAnnouncing to %s ...\n", trackerURL)
+
+	resp, err := client.Announce(trackerURL, &tracker.AnnounceRequest{
 		InfoHash: tf.InfoHash,
 		Port:     6881,
 		Uploaded: 0,
