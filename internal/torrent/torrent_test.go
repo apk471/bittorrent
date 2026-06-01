@@ -297,6 +297,61 @@ func TestOutOfRangePieceHash(t *testing.T) {
 	}
 }
 
+func TestTrackerURL(t *testing.T) {
+	data := makeSingleFileTorrent()
+	tf, _ := Parse(data)
+	if tf.TrackerURL() != "http://tracker.example.com/announce" {
+		t.Fatalf("expected announce URL, got %q", tf.TrackerURL())
+	}
+	if tf.IsTrackerless() {
+		t.Fatal("expected not trackerless")
+	}
+}
+
+func TestTrackerURLFallback(t *testing.T) {
+	pieces := makePieces(1)
+	info := bencode.Dict{
+		"name":         bencode.String("test"),
+		"piece length": bencode.Int(256),
+		"length":       bencode.Int(1000),
+		"pieces":       bencode.String(pieces),
+	}
+	root := bencode.Dict{
+		"announce-list": bencode.List{bencode.List{bencode.String("http://backup.example.com/announce")}},
+		"info":          info,
+	}
+	data, _ := bencode.EncodeBytes(root)
+	tf, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tf.TrackerURL() != "http://backup.example.com/announce" {
+		t.Fatalf("expected announce-list fallback, got %q", tf.TrackerURL())
+	}
+}
+
+func TestTrackerlessTorrent(t *testing.T) {
+	pieces := makePieces(1)
+	info := bencode.Dict{
+		"name":         bencode.String("test"),
+		"piece length": bencode.Int(256),
+		"length":       bencode.Int(1000),
+		"pieces":       bencode.String(pieces),
+	}
+	root := bencode.Dict{"info": info}
+	data, _ := bencode.EncodeBytes(root)
+	tf, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tf.IsTrackerless() {
+		t.Fatal("expected trackerless")
+	}
+	if tf.TrackerURL() != "" {
+		t.Fatalf("expected empty URL, got %q", tf.TrackerURL())
+	}
+}
+
 func TestPieceLengthSmallFile(t *testing.T) {
 	pieces := makePieces(1)
 	info := bencode.Dict{
