@@ -81,7 +81,13 @@ func (c *TrackerClient) Announce(announceURL string, req *AnnounceRequest) (*Ann
 	}
 	u.RawQuery = q.Encode()
 
-	resp, err := c.httpClient.Get(u.String())
+	httpReq, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("tracker: create request: %w", err)
+	}
+	httpReq.Header.Set("User-Agent", "GoBitTorrent/0.1")
+
+	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("tracker: announce request: %w", err)
 	}
