@@ -87,6 +87,14 @@ func (pc *PeerConn) Close() {
 	}
 }
 
+func (pc *PeerConn) SetReadTimeout(d time.Duration) {
+	if d > 0 {
+		pc.conn.SetReadDeadline(time.Now().Add(d))
+	} else {
+		pc.conn.SetReadDeadline(time.Time{})
+	}
+}
+
 func (pc *PeerConn) RemoteAddr() net.Addr {
 	return pc.conn.RemoteAddr()
 }
