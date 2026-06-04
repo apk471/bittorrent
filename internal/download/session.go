@@ -1,10 +1,13 @@
 package download
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -91,9 +94,50 @@ func (s *Session) VerifyAll() (total, checked, failed int, err error) {
 	return numPieces, checked, failed, nil
 }
 
+func (s *Session) Resume() (int, error) {
+	if !s.Storage.Exists() {
+		return 0, nil
+	}
+	numPieces := s.Torrent.NumPieces()
+	restored := 0
+	for i := 0; i < numPieces; i++ {
+		data, err := s.Storage.ReadPiece(i, s.Torrent.Info.PieceLength)
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return restored, fmt.Errorf("read piece %d during resume: %w", i, err)
+		}
+		pieceLen := s.PieceMgr.PieceLength(i)
+		if int64(len(data)) != pieceLen {
+			continue
+		}
+		expected := s.Torrent.PieceHash(i)
+		if s.Storage.VerifyPiece(data, expected) {
+			s.PieceMgr.MarkDownloaded(i)
+			restored++
+		}
+	}
+	if restored > 0 {
+		log.Printf("Resumed %d/%d pieces (%.1f%%)", restored, numPieces, float64(restored)/float64(numPieces)*100)
+	}
+	return restored, nil
+}
+
 func (s *Session) Run() error {
 	if s.trackerURL == "" {
 		return fmt.Errorf("no tracker URL (trackerless torrents not supported)")
+	}
+
+	restored, err := s.Resume()
+	if err != nil {
+		return fmt.Errorf("resume: %w", err)
+	}
+	_ = restored
+
+	if s.PieceMgr.Complete() {
+		log.Printf("All pieces already downloaded")
+		return nil
 	}
 
 	peers := make(chan tracker.Peer, 200)
