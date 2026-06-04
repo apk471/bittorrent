@@ -1,10 +1,13 @@
 package download
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -100,7 +103,10 @@ func (s *Session) Resume() (int, error) {
 	for i := 0; i < numPieces; i++ {
 		data, err := s.Storage.ReadPiece(i, s.Torrent.Info.PieceLength)
 		if err != nil {
-			continue
+			if errors.Is(err, io.EOF) || errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return restored, fmt.Errorf("read piece %d during resume: %w", i, err)
 		}
 		pieceLen := s.PieceMgr.PieceLength(i)
 		if int64(len(data)) != pieceLen {
