@@ -10,6 +10,8 @@ import (
 	"github.com/ayushamin/bittorent/internal/torrent"
 )
 
+var version = "dev"
+
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "--gen" {
 		path := "/tmp/test.torrent"
@@ -24,8 +26,13 @@ func main() {
 		return
 	}
 
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println(version)
+		return
+	}
+
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage:\n  %s --gen [path]     Generate test torrent\n  %s --verify <file.torrent> <output-dir>   Verify downloaded pieces\n  %s <file.torrent> [output-dir]   Download file\n", os.Args[0], os.Args[0], os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage:\n  %s --version           Show version\n  %s --gen [path]        Generate test torrent\n  %s --verify <torrent> <dir>   Verify pieces\n  %s --debug <torrent>   Show metadata\n  %s <torrent> [dir]     Download\n", os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 		os.Exit(1)
 	}
 
