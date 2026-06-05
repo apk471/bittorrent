@@ -18,8 +18,16 @@ func programVersion() string {
 		return ldVersion
 	}
 	info, ok := debug.ReadBuildInfo()
-	if ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+	if !ok {
+		return "dev"
+	}
+	if info.Main.Version != "" && info.Main.Version != "(devel)" {
 		return info.Main.Version
+	}
+	for _, dep := range info.Deps {
+		if dep.Path == "github.com/apk471/bittorrent" && dep.Version != "" {
+			return dep.Version
+		}
 	}
 	return "dev"
 }
