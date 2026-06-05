@@ -11,12 +11,17 @@ import (
 	"github.com/apk471/bittorrent/pkg/torrent"
 )
 
-var version = "dev"
+var ldVersion = "" // set via -ldflags during make build
 
-func init() {
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
-		version = info.Main.Version
+func programVersion() string {
+	if ldVersion != "" {
+		return ldVersion
 	}
+	info, ok := debug.ReadBuildInfo()
+	if ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
 }
 
 func main() {
@@ -34,7 +39,7 @@ func main() {
 	}
 
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		fmt.Println(version)
+		fmt.Println(programVersion())
 		return
 	}
 

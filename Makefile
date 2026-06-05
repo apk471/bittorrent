@@ -2,7 +2,7 @@ BINARY   := bittorrent
 CMD_DIR  := ./cmd/btdemo
 BUILD_DIR := build
 VERSION  ?= $(shell git describe --tags --dirty --always 2>/dev/null || echo "dev")
-LDFLAGS  := -ldflags="-s -w -X main.version=$(VERSION)"
+LDFLAGS  := -ldflags="-s -w -X main.ldVersion=$(VERSION)"
 
 GOOS     ?= $(shell go env GOOS)
 GOARCH   ?= $(shell go env GOARCH)
