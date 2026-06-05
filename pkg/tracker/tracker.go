@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ayushamin/bittorent/pkg/bencode"
+	"github.com/apk471/bittorrent/pkg/bencode"
 )
 
 type TrackerClient struct {

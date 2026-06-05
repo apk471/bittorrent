@@ -6,8 +6,8 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/ayushamin/bittorent/pkg/download"
-	"github.com/ayushamin/bittorent/pkg/torrent"
+	"github.com/apk471/bittorrent/pkg/download"
+	"github.com/apk471/bittorrent/pkg/torrent"
 )
 
 var version = "dev"
