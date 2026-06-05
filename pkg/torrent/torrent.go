@@ -4,7 +4,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 
-	"github.com/ayushamin/bittorent/internal/bencode"
+	"github.com/ayushamin/bittorent/pkg/bencode"
 )
 
 type TorrentFile struct {

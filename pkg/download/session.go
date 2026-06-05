@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ayushamin/bittorent/internal/peer"
-	"github.com/ayushamin/bittorent/internal/piece"
-	"github.com/ayushamin/bittorent/internal/storage"
-	"github.com/ayushamin/bittorent/internal/torrent"
-	"github.com/ayushamin/bittorent/internal/tracker"
+	"github.com/ayushamin/bittorent/pkg/peer"
+	"github.com/ayushamin/bittorent/pkg/piece"
+	"github.com/ayushamin/bittorent/pkg/storage"
+	"github.com/ayushamin/bittorent/pkg/torrent"
+	"github.com/ayushamin/bittorent/pkg/tracker"
 )
 
 type Session struct {

@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ayushamin/bittorent/internal/bencode"
+	"github.com/ayushamin/bittorent/pkg/bencode"
 )
 
 func makeCompactPeers(peers []Peer) []byte {

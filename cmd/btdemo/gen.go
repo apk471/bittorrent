@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ayushamin/bittorent/internal/bencode"
+	"github.com/ayushamin/bittorent/pkg/bencode"
 )
 
 func makePieces(count int) []byte {
