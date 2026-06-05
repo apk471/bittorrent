@@ -5,7 +5,7 @@ A BitTorrent client library and CLI tool built from scratch in Go.
 ## Install
 
 ```bash
-go install github.com/ayushamin/bittorrent/cmd/btdemo@latest
+go install github.com/apk471/bittorrent/cmd/btdemo@latest
 ```
 
 Or build from source:
@@ -38,8 +38,8 @@ Resume is automatic — Ctrl+C and re-run continues where you left off.
 
 ```go
 import (
-    "github.com/ayushamin/bittorrent/pkg/download"
-    "github.com/ayushamin/bittorrent/pkg/torrent"
+    "github.com/apk471/bittorrent/pkg/download"
+    "github.com/apk471/bittorrent/pkg/torrent"
 )
 
 data, _ := os.ReadFile("file.torrent")

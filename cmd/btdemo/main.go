@@ -5,12 +5,19 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime/debug"
 
 	"github.com/apk471/bittorrent/pkg/download"
 	"github.com/apk471/bittorrent/pkg/torrent"
 )
 
 var version = "dev"
+
+func init() {
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		version = info.Main.Version
+	}
+}
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "--gen" {
