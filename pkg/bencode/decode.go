@@ -12,6 +12,7 @@ type decoder struct {
 	r *bufio.Reader
 }
 
+// Decode reads and decodes a bencode value from r.
 func Decode(r io.Reader) (Value, error) {
 	d := &decoder{r: bufio.NewReader(r)}
 	v, err := d.decodeValue()
@@ -161,6 +162,7 @@ func (d *decoder) readUntil(stop byte) ([]byte, error) {
 	}
 }
 
+// DecodeBytes decodes a bencode value from a byte slice.
 func DecodeBytes(data []byte) (Value, error) {
 	return Decode(bytes.NewReader(data))
 }

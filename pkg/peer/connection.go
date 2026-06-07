@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// PeerConn is a BitTorrent peer wire-protocol connection.
 type PeerConn struct {
 	conn       net.Conn
 	InfoHash   [20]byte
@@ -21,6 +22,8 @@ type PeerConn struct {
 	bufReader  io.Reader
 }
 
+// Dial connects to a peer, performs the BitTorrent handshake,
+// and returns an established connection.
 func Dial(addr string, infoHash, peerID [20]byte, timeout time.Duration) (*PeerConn, error) {
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
@@ -28,10 +31,10 @@ func Dial(addr string, infoHash, peerID [20]byte, timeout time.Duration) (*PeerC
 	}
 
 	pc := &PeerConn{
-		conn:     conn,
-		InfoHash: infoHash,
-		PeerID:   peerID,
-		Choked:   true,
+		conn:      conn,
+		InfoHash:  infoHash,
+		PeerID:    peerID,
+		Choked:    true,
 		bufReader: conn,
 	}
 
@@ -56,6 +59,7 @@ func Dial(addr string, infoHash, peerID [20]byte, timeout time.Duration) (*PeerC
 	return pc, nil
 }
 
+// ReadMessage reads and returns the next message from the peer.
 func (pc *PeerConn) ReadMessage() (*Message, error) {
 	pc.mu.Lock()
 	r := pc.bufReader
@@ -68,6 +72,7 @@ func (pc *PeerConn) ReadMessage() (*Message, error) {
 	return msg, nil
 }
 
+// SendMessage sends a message to the peer.
 func (pc *PeerConn) SendMessage(msg *Message) error {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
@@ -78,6 +83,7 @@ func (pc *PeerConn) SendMessage(msg *Message) error {
 	return SendMessage(pc.conn, msg)
 }
 
+// Close closes the peer connection.
 func (pc *PeerConn) Close() {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
@@ -87,6 +93,7 @@ func (pc *PeerConn) Close() {
 	}
 }
 
+// SetReadTimeout sets the read deadline for subsequent reads.
 func (pc *PeerConn) SetReadTimeout(d time.Duration) {
 	if d > 0 {
 		pc.conn.SetReadDeadline(time.Now().Add(d))
@@ -95,10 +102,12 @@ func (pc *PeerConn) SetReadTimeout(d time.Duration) {
 	}
 }
 
+// RemoteAddr returns the remote address of the peer.
 func (pc *PeerConn) RemoteAddr() net.Addr {
 	return pc.conn.RemoteAddr()
 }
 
+// IsClosed returns true if the connection has been closed.
 func (pc *PeerConn) IsClosed() bool {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()

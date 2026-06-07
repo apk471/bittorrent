@@ -7,6 +7,7 @@ import (
 	"sort"
 )
 
+// Encode writes the bencode-encoded form of v to w.
 func Encode(w io.Writer, v Value) error {
 	switch val := v.(type) {
 	case Int:
@@ -55,6 +56,7 @@ func Encode(w io.Writer, v Value) error {
 	}
 }
 
+// EncodeBytes encodes v to bencode and returns the byte slice.
 func EncodeBytes(v Value) ([]byte, error) {
 	var buf bytes.Buffer
 	if err := Encode(&buf, v); err != nil {

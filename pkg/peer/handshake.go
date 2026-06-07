@@ -6,6 +6,7 @@ import (
 	"net"
 )
 
+// Handshake is a BitTorrent peer protocol handshake message.
 type Handshake struct {
 	Pstr     string
 	InfoHash [20]byte
@@ -19,6 +20,7 @@ const (
 	handshakeSize    = 68
 )
 
+// NewHandshake creates a handshake message for the given infohash and peer ID.
 func NewHandshake(infoHash, peerID [20]byte) *Handshake {
 	return &Handshake{
 		Pstr:     handshakePstr,
@@ -27,6 +29,7 @@ func NewHandshake(infoHash, peerID [20]byte) *Handshake {
 	}
 }
 
+// Marshal serializes the handshake into a byte slice.
 func (h *Handshake) Marshal() []byte {
 	buf := make([]byte, handshakeSize)
 	buf[0] = handshakePstrLen
@@ -37,6 +40,7 @@ func (h *Handshake) Marshal() []byte {
 	return buf
 }
 
+// Unmarshal deserializes a handshake from a byte slice.
 func (h *Handshake) Unmarshal(data []byte) error {
 	if len(data) < handshakeSize {
 		return fmt.Errorf("handshake: too short (%d bytes)", len(data))
@@ -54,6 +58,7 @@ func (h *Handshake) Unmarshal(data []byte) error {
 	return nil
 }
 
+// DoHandshake performs the BitTorrent handshake over the given connection.
 func DoHandshake(conn net.Conn, infoHash, peerID [20]byte) (*Handshake, error) {
 	req := NewHandshake(infoHash, peerID)
 	data := req.Marshal()

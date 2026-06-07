@@ -5,14 +5,16 @@ import (
 	"sync"
 )
 
+// State represents the download state of a piece.
 type State byte
 
 const (
-	Missing   State = 0
+	Missing    State = 0
 	InProgress State = 1
-	Have      State = 2
+	Have       State = 2
 )
 
+// Manager tracks piece state and peer bitfields for rarest-first selection.
 type Manager struct {
 	mu           sync.Mutex
 	numPieces    int
@@ -22,6 +24,7 @@ type Manager struct {
 	peerBitfield map[string][]bool
 }
 
+// NewManager creates a piece manager for a torrent with the given parameters.
 func NewManager(numPieces int, pieceLength, totalSize int64) *Manager {
 	pm := &Manager{
 		numPieces:    numPieces,
@@ -33,10 +36,12 @@ func NewManager(numPieces int, pieceLength, totalSize int64) *Manager {
 	return pm
 }
 
+// NumPieces returns the total number of pieces.
 func (pm *Manager) NumPieces() int {
 	return pm.numPieces
 }
 
+// Have returns true if the piece at the given index has been downloaded.
 func (pm *Manager) Have(index int) bool {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -46,6 +51,7 @@ func (pm *Manager) Have(index int) bool {
 	return pm.state[index] == Have
 }
 
+// MarkDownloaded marks the piece at the given index as downloaded.
 func (pm *Manager) MarkDownloaded(index int) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -54,6 +60,7 @@ func (pm *Manager) MarkDownloaded(index int) {
 	}
 }
 
+// MarkInProgress marks the piece as currently being downloaded.
 func (pm *Manager) MarkInProgress(index int) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -62,18 +69,21 @@ func (pm *Manager) MarkInProgress(index int) {
 	}
 }
 
+// UpdatePeerBitfield records or updates a peer's available pieces.
 func (pm *Manager) UpdatePeerBitfield(peerID string, bitfield []bool) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	pm.peerBitfield[peerID] = bitfield
 }
 
+// RemovePeer removes a peer's bitfield from tracking.
 func (pm *Manager) RemovePeer(peerID string) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	delete(pm.peerBitfield, peerID)
 }
 
+// PeerHasPiece records that a peer has a specific piece (from a have message).
 func (pm *Manager) PeerHasPiece(peerID string, index int) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -84,6 +94,7 @@ func (pm *Manager) PeerHasPiece(peerID string, index int) {
 	bf[index] = true
 }
 
+// ReleasePiece marks a previously InProgress piece as Missing.
 func (pm *Manager) ReleasePiece(index int) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -92,6 +103,7 @@ func (pm *Manager) ReleasePiece(index int) {
 	}
 }
 
+// Progress returns the download progress as a percentage (0-100).
 func (pm *Manager) Progress() float64 {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -107,6 +119,7 @@ func (pm *Manager) Progress() float64 {
 	return float64(have) / float64(pm.numPieces) * 100
 }
 
+// Complete returns true if all pieces have been downloaded.
 func (pm *Manager) Complete() bool {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -118,6 +131,7 @@ func (pm *Manager) Complete() bool {
 	return true
 }
 
+// CountPeerForPiece returns how many known peers have the given piece.
 func (pm *Manager) CountPeerForPiece(index int) int {
 	count := 0
 	for _, bf := range pm.peerBitfield {
@@ -128,6 +142,8 @@ func (pm *Manager) CountPeerForPiece(index int) int {
 	return count
 }
 
+// PickPiece selects the rarest missing piece available from the peer.
+// Returns the piece index and true, or (0, false) if none available.
 func (pm *Manager) PickPiece(peerBitfield []bool) (int, bool) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -166,6 +182,7 @@ func (pm *Manager) PickPiece(peerBitfield []bool) (int, bool) {
 	return rarest, true
 }
 
+// MissingPieces returns a list of piece indices that are not yet downloaded.
 func (pm *Manager) MissingPieces() []int {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -178,6 +195,7 @@ func (pm *Manager) MissingPieces() []int {
 	return missing
 }
 
+// PieceLength returns the length of the piece at the given index.
 func (pm *Manager) PieceLength(index int) int64 {
 	if index < 0 || index >= pm.numPieces {
 		return 0

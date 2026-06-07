@@ -15,11 +15,13 @@ type Storage struct {
 	files    []FileInfo
 }
 
+// FileInfo describes a single file in a multi-file torrent layout.
 type FileInfo struct {
 	Length int64
 	Path   []string
 }
 
+// New creates a Storage instance and ensures the output directory exists.
 func New(basePath, name string, length int64, files []FileInfo) (*Storage, error) {
 	s := &Storage{
 		basePath: basePath,
@@ -37,15 +39,18 @@ func (s *Storage) dir() string {
 	return filepath.Join(s.basePath, s.name)
 }
 
+// IsSingleFile returns true if this is a single-file torrent.
 func (s *Storage) IsSingleFile() bool {
 	return s.length > 0
 }
 
+// VerifyPiece checks whether data matches the expected SHA-1 hash.
 func (s *Storage) VerifyPiece(data []byte, expectedHash [20]byte) bool {
 	h := sha1.Sum(data)
 	return h == expectedHash
 }
 
+// WritePiece writes piece data to disk at the correct offset.
 func (s *Storage) WritePiece(index int, data []byte, pieceLength int64) error {
 	offset := int64(index) * pieceLength
 
@@ -126,6 +131,8 @@ func (s *Storage) writeMultiFile(offset int64, data []byte) error {
 	return nil
 }
 
+// ReadPiece reads piece data from disk.
+// Returns io.EOF if the piece is shorter than expected (sparse file).
 func (s *Storage) ReadPiece(index int, pieceLength int64) ([]byte, error) {
 	offset := int64(index) * pieceLength
 	if s.IsSingleFile() {
@@ -205,6 +212,7 @@ func (s *Storage) readMultiFile(offset, size int64) ([]byte, error) {
 	return data, nil
 }
 
+// Exists returns true if the output directory or files already exist.
 func (s *Storage) Exists() bool {
 	if s.IsSingleFile() {
 		fpath := filepath.Join(s.dir(), s.name)

@@ -6,6 +6,7 @@ import (
 	"io"
 )
 
+// MessageID identifies a peer wire protocol message type.
 type MessageID byte
 
 const (
@@ -21,6 +22,7 @@ const (
 	MsgPort          MessageID = 9
 )
 
+// String returns a human-readable name for the message type.
 func (id MessageID) String() string {
 	switch id {
 	case MsgChoke:
@@ -48,6 +50,7 @@ func (id MessageID) String() string {
 	}
 }
 
+// Message is a peer wire protocol message.
 type Message struct {
 	ID      MessageID
 	Index   uint32
@@ -56,6 +59,7 @@ type Message struct {
 	Payload []byte
 }
 
+// Marshal serializes the message into a byte slice suitable for sending.
 func (m *Message) Marshal() []byte {
 	switch m.ID {
 	case MsgChoke, MsgUnchoke, MsgInterested, MsgNotInterested:
@@ -110,6 +114,8 @@ func (m *Message) Marshal() []byte {
 	}
 }
 
+// ReadMessage reads and parses one message from the reader.
+// Returns (nil, nil) for keep-alive.
 func ReadMessage(r io.Reader) (*Message, error) {
 	lenBuf := make([]byte, 4)
 	if _, err := io.ReadFull(r, lenBuf); err != nil {
@@ -151,6 +157,7 @@ func ReadMessage(r io.Reader) (*Message, error) {
 	return msg, nil
 }
 
+// SendMessage marshals and writes a message to the writer.
 func SendMessage(w io.Writer, msg *Message) error {
 	data := msg.Marshal()
 	if data == nil {

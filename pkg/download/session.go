@@ -27,14 +27,16 @@ type LoggerFunc func(format string, v ...any)
 
 func (f LoggerFunc) Printf(format string, v ...any) { f(format, v...) }
 
+// Session orchestrates a full BitTorrent download: tracker announces,
+// peer connections, piece selection, and storage I/O.
 type Session struct {
-	Torrent   *torrent.TorrentFile
-	PieceMgr  *piece.Manager
-	Storage   *storage.Storage
-	PeerID    [20]byte
-	client    *tracker.TrackerClient
-	OutputDir string
-	StopCh    chan struct{}
+	Torrent    *torrent.TorrentFile
+	PieceMgr   *piece.Manager
+	Storage    *storage.Storage
+	PeerID     [20]byte
+	client     *tracker.TrackerClient
+	OutputDir  string
+	StopCh     chan struct{}
 	trackerURL string
 	numWorkers int
 	log        Logger
@@ -49,6 +51,7 @@ func (s *Session) logf(format string, v ...any) {
 	}
 }
 
+// New creates a download Session for the given torrent and output directory.
 func New(tf *torrent.TorrentFile, outputDir string) (*Session, error) {
 	client := tracker.NewTrackerClient()
 	peerID := client.PeerID
@@ -85,6 +88,7 @@ func New(tf *torrent.TorrentFile, outputDir string) (*Session, error) {
 	}, nil
 }
 
+// Stop signals all workers to shut down gracefully.
 func (s *Session) Stop() {
 	select {
 	case <-s.StopCh:
@@ -93,6 +97,7 @@ func (s *Session) Stop() {
 	}
 }
 
+// VerifyAll checks SHA-1 hashes for all Have-marked pieces on disk.
 func (s *Session) VerifyAll() (total, checked, failed int, err error) {
 	numPieces := s.Torrent.NumPieces()
 	for i := 0; i < numPieces; i++ {
@@ -113,6 +118,8 @@ func (s *Session) VerifyAll() (total, checked, failed int, err error) {
 	return numPieces, checked, failed, nil
 }
 
+// Resume scans storage for existing pieces, verifies SHA-1 hashes,
+// and marks valid pieces as downloaded.
 func (s *Session) Resume() (int, error) {
 	if !s.Storage.Exists() {
 		return 0, nil
@@ -143,6 +150,8 @@ func (s *Session) Resume() (int, error) {
 	return restored, nil
 }
 
+// Run starts the download session: announces to the tracker, spawns
+// worker goroutines, and downloads pieces until completion or stop.
 func (s *Session) Run() error {
 	if s.trackerURL == "" {
 		return fmt.Errorf("no tracker URL (trackerless torrents not supported)")

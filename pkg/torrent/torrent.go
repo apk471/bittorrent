@@ -7,6 +7,7 @@ import (
 	"github.com/apk471/bittorrent/pkg/bencode"
 )
 
+// TorrentFile represents a parsed .torrent file.
 type TorrentFile struct {
 	Announce     string
 	AnnounceList [][]string
@@ -17,20 +18,22 @@ type TorrentFile struct {
 	InfoHash     [20]byte
 }
 
+// InfoDict is the info dictionary from a torrent file.
 type InfoDict struct {
 	Name        string
 	PieceLength int64
 	Pieces      []byte
-
-	Length int64
-	Files  []FileInfo
+	Length      int64
+	Files       []FileInfo
 }
 
+// FileInfo describes a single file in a multi-file torrent.
 type FileInfo struct {
 	Length int64
 	Path   []string
 }
 
+// Parse decodes a .torrent file and returns a TorrentFile.
 func Parse(data []byte) (*TorrentFile, error) {
 	v, err := bencode.DecodeBytes(data)
 	if err != nil {
@@ -151,10 +154,12 @@ func Parse(data []byte) (*TorrentFile, error) {
 	return t, nil
 }
 
+// NumPieces returns the total number of pieces.
 func (t *TorrentFile) NumPieces() int {
 	return len(t.Info.Pieces) / 20
 }
 
+// PieceHash returns the SHA-1 hash for the piece at the given index.
 func (t *TorrentFile) PieceHash(index int) [20]byte {
 	var hash [20]byte
 	if index < 0 || index >= t.NumPieces() {
@@ -165,14 +170,17 @@ func (t *TorrentFile) PieceHash(index int) [20]byte {
 	return hash
 }
 
+// IsSingleFile returns true if this is a single-file torrent.
 func (t *TorrentFile) IsSingleFile() bool {
 	return t.Info.Length > 0
 }
 
+// IsMultiFile returns true if this is a multi-file torrent.
 func (t *TorrentFile) IsMultiFile() bool {
 	return len(t.Info.Files) > 0
 }
 
+// TotalSize returns the total download size in bytes.
 func (t *TorrentFile) TotalSize() int64 {
 	if t.IsSingleFile() {
 		return t.Info.Length
@@ -184,6 +192,7 @@ func (t *TorrentFile) TotalSize() int64 {
 	return total
 }
 
+// TrackerURL returns the primary tracker announce URL.
 func (t *TorrentFile) TrackerURL() string {
 	if t.Announce != "" {
 		return t.Announce
@@ -194,10 +203,13 @@ func (t *TorrentFile) TrackerURL() string {
 	return ""
 }
 
+// IsTrackerless returns true if no tracker URL is available.
 func (t *TorrentFile) IsTrackerless() bool {
 	return t.TrackerURL() == ""
 }
 
+// PieceLength returns the length of the piece at the given index.
+// The last piece may be shorter than PieceLength.
 func (t *TorrentFile) PieceLength(index int) int64 {
 	num := t.NumPieces()
 	if index < 0 || index >= num {
