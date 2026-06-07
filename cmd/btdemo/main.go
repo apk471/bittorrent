@@ -112,7 +112,9 @@ func main() {
 	}
 
 	fmt.Println("\nStarting download...")
-	sess, err := download.New(tf, outputDir)
+	sess, err := download.New(tf, outputDir, &download.Config{
+		Logger: download.LoggerFunc(log.Printf),
+	})
 	if err != nil {
 		log.Fatalf("Failed to create session: %v", err)
 	}
@@ -168,7 +170,7 @@ func verifyCmd(torrentPath, outputDir string) {
 		log.Fatalf("Error parsing torrent: %v", err)
 	}
 
-	sess, err := download.New(tf, outputDir)
+	sess, err := download.New(tf, outputDir, nil)
 	if err != nil {
 		log.Fatalf("Error creating session: %v", err)
 	}

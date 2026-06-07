@@ -2,13 +2,21 @@ package bencode
 
 import "fmt"
 
+// Value is a bencode value. The concrete types are Int, String, List, and Dict.
 type Value interface {
 	value()
 }
 
+// Int is a bencode integer.
 type Int int64
+
+// String is a bencode byte string.
 type String []byte
+
+// List is a bencode list.
 type List []Value
+
+// Dict is a bencode dictionary (keys are strings, values are bencode values).
 type Dict map[string]Value
 
 func (Int) value()    {}
@@ -16,14 +24,17 @@ func (String) value() {}
 func (List) value()   {}
 func (Dict) value()   {}
 
+// String returns the byte string as a Go string.
 func (s String) String() string {
 	return string(s)
 }
 
+// Bytes returns the byte string as a Go []byte.
 func (s String) Bytes() []byte {
 	return []byte(s)
 }
 
+// GetString looks up a key in the dict and returns it as a String.
 func (d Dict) GetString(key string) (String, error) {
 	v, ok := d[key]
 	if !ok {
@@ -36,6 +47,7 @@ func (d Dict) GetString(key string) (String, error) {
 	return s, nil
 }
 
+// GetInt looks up a key in the dict and returns it as an Int.
 func (d Dict) GetInt(key string) (Int, error) {
 	v, ok := d[key]
 	if !ok {
@@ -48,6 +60,7 @@ func (d Dict) GetInt(key string) (Int, error) {
 	return i, nil
 }
 
+// GetList looks up a key in the dict and returns it as a List.
 func (d Dict) GetList(key string) (List, error) {
 	v, ok := d[key]
 	if !ok {
@@ -60,6 +73,7 @@ func (d Dict) GetList(key string) (List, error) {
 	return l, nil
 }
 
+// GetDict looks up a key in the dict and returns it as a Dict.
 func (d Dict) GetDict(key string) (Dict, error) {
 	v, ok := d[key]
 	if !ok {

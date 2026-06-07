@@ -14,11 +14,13 @@ import (
 	"github.com/apk471/bittorrent/pkg/bencode"
 )
 
+// TrackerClient communicates with an HTTP tracker.
 type TrackerClient struct {
 	httpClient *http.Client
 	PeerID     [20]byte
 }
 
+// AnnounceRequest contains parameters for a tracker announce.
 type AnnounceRequest struct {
 	InfoHash   [20]byte
 	Port       uint16
@@ -29,6 +31,7 @@ type AnnounceRequest struct {
 	NumWant    int
 }
 
+// AnnounceResponse is the response from a tracker announce.
 type AnnounceResponse struct {
 	FailureReason string
 	Interval      int
@@ -37,11 +40,13 @@ type AnnounceResponse struct {
 	Peers         []Peer
 }
 
+// Peer represents a peer address returned by the tracker.
 type Peer struct {
 	IP   net.IP
 	Port uint16
 }
 
+// NewTrackerClient creates a new tracker client with a random peer ID.
 func NewTrackerClient() *TrackerClient {
 	return &TrackerClient{
 		httpClient: &http.Client{Timeout: 15 * time.Second},
@@ -56,6 +61,7 @@ func generatePeerID() [20]byte {
 	return id
 }
 
+// Announce sends an announce request to the tracker and parses the response.
 func (c *TrackerClient) Announce(announceURL string, req *AnnounceRequest) (*AnnounceResponse, error) {
 	u, err := url.Parse(announceURL)
 	if err != nil {
