@@ -116,6 +116,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create session: %v", err)
 	}
+	sess.SetLogger(download.LoggerFunc(log.Printf))
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
@@ -172,6 +173,7 @@ func verifyCmd(torrentPath, outputDir string) {
 	if err != nil {
 		log.Fatalf("Error creating session: %v", err)
 	}
+	sess.SetLogger(download.LoggerFunc(log.Printf))
 
 	fmt.Println("Verifying downloaded pieces...")
 	total, checked, failed, err := sess.VerifyAll()

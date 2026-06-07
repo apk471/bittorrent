@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -18,6 +17,16 @@ import (
 	"github.com/apk471/bittorrent/pkg/tracker"
 )
 
+// Logger is the interface for logging. Pass nil to disable all logging.
+type Logger interface {
+	Printf(format string, v ...any)
+}
+
+// LoggerFunc is an adapter to use ordinary functions as loggers.
+type LoggerFunc func(format string, v ...any)
+
+func (f LoggerFunc) Printf(format string, v ...any) { f(format, v...) }
+
 type Session struct {
 	Torrent   *torrent.TorrentFile
 	PieceMgr  *piece.Manager
@@ -28,6 +37,16 @@ type Session struct {
 	StopCh    chan struct{}
 	trackerURL string
 	numWorkers int
+	log        Logger
+}
+
+// SetLogger sets the logger for the session. Pass nil to disable logging.
+func (s *Session) SetLogger(l Logger) { s.log = l }
+
+func (s *Session) logf(format string, v ...any) {
+	if s.log != nil {
+		s.log.Printf(format, v...)
+	}
 }
 
 func New(tf *torrent.TorrentFile, outputDir string) (*Session, error) {
@@ -119,7 +138,7 @@ func (s *Session) Resume() (int, error) {
 		}
 	}
 	if restored > 0 {
-		log.Printf("Resumed %d/%d pieces (%.1f%%)", restored, numPieces, float64(restored)/float64(numPieces)*100)
+		s.logf("Resumed %d/%d pieces (%.1f%%)", restored, numPieces, float64(restored)/float64(numPieces)*100)
 	}
 	return restored, nil
 }
@@ -136,7 +155,7 @@ func (s *Session) Run() error {
 	_ = restored
 
 	if s.PieceMgr.Complete() {
-		log.Printf("All pieces already downloaded")
+		s.logf("All pieces already downloaded")
 		return nil
 	}
 
@@ -180,13 +199,13 @@ func (s *Session) Run() error {
 				Event:    event,
 			})
 			if err != nil {
-				log.Printf("Tracker announce failed: %v", err)
+				s.logf("Tracker announce failed: %v", err)
 				return
 			}
 			if resp.Interval > 0 {
 				interval = time.Duration(resp.Interval) * time.Second
 			}
-			log.Printf("Got %d peers from tracker (%d seeders, %d leechers)",
+			s.logf("Got %d peers from tracker (%d seeders, %d leechers)",
 				len(resp.Peers), resp.Complete, resp.Incomplete)
 
 			shuffled := make([]tracker.Peer, len(resp.Peers))
@@ -274,13 +293,13 @@ func (s *Session) waitForUnchoke(pc *peer.PeerConn, msgCh chan *peer.Message, er
 			default:
 			}
 		case err := <-errCh:
-			log.Printf("  error waiting for unchoke: %v", err)
+			s.logf("  error waiting for unchoke: %v", err)
 			return false
 		case <-s.StopCh:
-			log.Printf("  download stopped while waiting for unchoke")
+			s.logf("  download stopped while waiting for unchoke")
 			return false
 		case <-time.After(30 * time.Second):
-			log.Printf("  timeout waiting for unchoke")
+			s.logf("  timeout waiting for unchoke")
 			return false
 		}
 	}
@@ -288,21 +307,21 @@ func (s *Session) waitForUnchoke(pc *peer.PeerConn, msgCh chan *peer.Message, er
 
 func (s *Session) downloadFromPeer(p tracker.Peer) {
 	addr := net.JoinHostPort(p.IP.String(), fmt.Sprintf("%d", p.Port))
-	log.Printf("Connecting to peer %s", addr)
+	s.logf("Connecting to peer %s", addr)
 
 	pc, err := peer.Dial(addr, s.Torrent.InfoHash, s.PeerID, 10*time.Second)
 	if err != nil {
-		log.Printf("  connect failed: %v", err)
+		s.logf("  connect failed: %v", err)
 		return
 	}
 	defer pc.Close()
 
-	log.Printf("  connected, peer ID: %x", pc.RemoteID)
+	s.logf("  connected, peer ID: %x", pc.RemoteID)
 
 	pc.SetReadTimeout(10 * time.Second)
 	firstMsg, err := pc.ReadMessage()
 	if err != nil {
-		log.Printf("  read first message: %v", err)
+		s.logf("  read first message: %v", err)
 		return
 	}
 	peerBitfield := s.parsePeerBitfield(firstMsg, s.Torrent.NumPieces())
@@ -317,10 +336,10 @@ func (s *Session) downloadFromPeer(p tracker.Peer) {
 	if firstMsg != nil {
 		firstMsgID = firstMsg.ID.String()
 	}
-	log.Printf("  peer has %d/%d pieces (first msg: %s)", have, s.Torrent.NumPieces(), firstMsgID)
+	s.logf("  peer has %d/%d pieces (first msg: %s)", have, s.Torrent.NumPieces(), firstMsgID)
 
 	if have == 0 {
-		log.Printf("  peer has no pieces, skipping")
+		s.logf("  peer has no pieces, skipping")
 		return
 	}
 
@@ -335,16 +354,16 @@ func (s *Session) downloadFromPeer(p tracker.Peer) {
 	s.PieceMgr.UpdatePeerBitfield(string(pc.RemoteID[:]), peerBitfield)
 
 	if err := pc.SendMessage(&peer.Message{ID: peer.MsgInterested}); err != nil {
-		log.Printf("  send interested failed: %v", err)
+		s.logf("  send interested failed: %v", err)
 		return
 	}
 
-	log.Printf("  waiting for unchoke...")
+	s.logf("  waiting for unchoke...")
 	if !s.waitForUnchoke(pc, ch, errCh) {
-		log.Printf("  peer did not unchoke us")
+		s.logf("  peer did not unchoke us")
 		return
 	}
-	log.Printf("  unchoked, starting download")
+	s.logf("  unchoked, starting download")
 
 	for {
 		if s.PieceMgr.Complete() {
@@ -353,21 +372,21 @@ func (s *Session) downloadFromPeer(p tracker.Peer) {
 
 		select {
 		case <-s.StopCh:
-			log.Printf("  download stopped")
+			s.logf("  download stopped")
 			return
 		default:
 		}
 
 		pieceIndex, ok := s.PieceMgr.PickPiece(peerBitfield)
 		if !ok {
-			log.Printf("  no more pieces to download from this peer")
+			s.logf("  no more pieces to download from this peer")
 			return
 		}
 
-		log.Printf("  downloading piece %d/%d", pieceIndex, s.Torrent.NumPieces()-1)
+		s.logf("  downloading piece %d/%d", pieceIndex, s.Torrent.NumPieces()-1)
 
 		if err := s.downloadPiece(pc, ch, errCh, pieceIndex); err != nil {
-			log.Printf("  piece %d failed: %v", pieceIndex, err)
+			s.logf("  piece %d failed: %v", pieceIndex, err)
 			s.PieceMgr.ReleasePiece(pieceIndex)
 			s.PieceMgr.RemovePeer(string(pc.RemoteID[:]))
 			return
@@ -444,6 +463,6 @@ func (s *Session) downloadPiece(pc *peer.PeerConn, msgCh chan *peer.Message, err
 	}
 
 	s.PieceMgr.MarkDownloaded(index)
-	log.Printf("  piece %d complete (%.1f%%)", index, s.PieceMgr.Progress())
+	s.logf("  piece %d complete (%.1f%%)", index, s.PieceMgr.Progress())
 	return nil
 }
