@@ -27,18 +27,63 @@ type LoggerFunc func(format string, v ...any)
 
 func (f LoggerFunc) Printf(format string, v ...any) { f(format, v...) }
 
+// Config contains configurable parameters for a Session.
+// Zero values use sensible defaults.
+type Config struct {
+	NumWorkers    int
+	BlockSize     int
+	PipelineDepth int
+	PeerChanSize  int
+	MsgChanSize   int
+	PortOffset    int
+	DialTimeout   time.Duration
+	ReadTimeout   time.Duration
+	PieceTimeout  time.Duration
+	Logger        Logger
+}
+
+func (c *Config) defaults() {
+	if c.NumWorkers <= 0 {
+		c.NumWorkers = 30
+	}
+	if c.BlockSize <= 0 {
+		c.BlockSize = 16384
+	}
+	if c.PipelineDepth <= 0 {
+		c.PipelineDepth = 5
+	}
+	if c.PeerChanSize <= 0 {
+		c.PeerChanSize = 200
+	}
+	if c.MsgChanSize <= 0 {
+		c.MsgChanSize = 64
+	}
+	if c.PortOffset <= 0 {
+		c.PortOffset = 6881
+	}
+	if c.DialTimeout <= 0 {
+		c.DialTimeout = 10 * time.Second
+	}
+	if c.ReadTimeout <= 0 {
+		c.ReadTimeout = 30 * time.Second
+	}
+	if c.PieceTimeout <= 0 {
+		c.PieceTimeout = 60 * time.Second
+	}
+}
+
 // Session orchestrates a full BitTorrent download: tracker announces,
 // peer connections, piece selection, and storage I/O.
 type Session struct {
-	Torrent    *torrent.TorrentFile
-	PieceMgr   *piece.Manager
-	Storage    *storage.Storage
-	PeerID     [20]byte
-	client     *tracker.TrackerClient
-	OutputDir  string
-	StopCh     chan struct{}
+	Torrent   *torrent.TorrentFile
+	PieceMgr  *piece.Manager
+	Storage   *storage.Storage
+	PeerID    [20]byte
+	client    *tracker.TrackerClient
+	OutputDir string
+	StopCh    chan struct{}
 	trackerURL string
-	numWorkers int
+	cfg        Config
 	log        Logger
 }
 
@@ -52,7 +97,13 @@ func (s *Session) logf(format string, v ...any) {
 }
 
 // New creates a download Session for the given torrent and output directory.
-func New(tf *torrent.TorrentFile, outputDir string) (*Session, error) {
+// Pass a nil or zero Config to use sensible defaults.
+func New(tf *torrent.TorrentFile, outputDir string, cfg *Config) (*Session, error) {
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	cfg.defaults()
+
 	client := tracker.NewTrackerClient()
 	peerID := client.PeerID
 
@@ -84,7 +135,8 @@ func New(tf *torrent.TorrentFile, outputDir string) (*Session, error) {
 		OutputDir:  outputDir,
 		StopCh:     make(chan struct{}),
 		trackerURL: tf.TrackerURL(),
-		numWorkers: 30,
+		cfg:        *cfg,
+		log:        cfg.Logger,
 	}, nil
 }
 
@@ -168,10 +220,10 @@ func (s *Session) Run() error {
 		return nil
 	}
 
-	peers := make(chan tracker.Peer, 200)
+	peers := make(chan tracker.Peer, s.cfg.PeerChanSize)
 	var wg sync.WaitGroup
 
-	for i := 0; i < s.numWorkers; i++ {
+	for i := 0; i < s.cfg.NumWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -202,7 +254,7 @@ func (s *Session) Run() error {
 		announce := func(event string) {
 			resp, err := s.client.Announce(s.trackerURL, &tracker.AnnounceRequest{
 				InfoHash: s.Torrent.InfoHash,
-				Port:     uint16(6881 + rand.Intn(100)),
+				Port:     uint16(s.cfg.PortOffset + rand.Intn(100)),
 				Uploaded: 0,
 				Left:     s.Torrent.TotalSize(),
 				Event:    event,
@@ -273,7 +325,7 @@ func (s *Session) parsePeerBitfield(msg *peer.Message, numPieces int) []bool {
 
 func (s *Session) readPeerMessages(pc *peer.PeerConn, ch chan *peer.Message, errCh chan error) {
 	for {
-		pc.SetReadTimeout(30 * time.Second)
+		pc.SetReadTimeout(s.cfg.ReadTimeout)
 		msg, err := pc.ReadMessage()
 		if err != nil {
 			select {
@@ -307,7 +359,7 @@ func (s *Session) waitForUnchoke(pc *peer.PeerConn, msgCh chan *peer.Message, er
 		case <-s.StopCh:
 			s.logf("  download stopped while waiting for unchoke")
 			return false
-		case <-time.After(30 * time.Second):
+		case <-time.After(s.cfg.ReadTimeout):
 			s.logf("  timeout waiting for unchoke")
 			return false
 		}
@@ -318,7 +370,7 @@ func (s *Session) downloadFromPeer(p tracker.Peer) {
 	addr := net.JoinHostPort(p.IP.String(), fmt.Sprintf("%d", p.Port))
 	s.logf("Connecting to peer %s", addr)
 
-	pc, err := peer.Dial(addr, s.Torrent.InfoHash, s.PeerID, 10*time.Second)
+	pc, err := peer.Dial(addr, s.Torrent.InfoHash, s.PeerID, s.cfg.DialTimeout)
 	if err != nil {
 		s.logf("  connect failed: %v", err)
 		return
@@ -327,7 +379,7 @@ func (s *Session) downloadFromPeer(p tracker.Peer) {
 
 	s.logf("  connected, peer ID: %x", pc.RemoteID)
 
-	pc.SetReadTimeout(10 * time.Second)
+	pc.SetReadTimeout(s.cfg.ReadTimeout)
 	firstMsg, err := pc.ReadMessage()
 	if err != nil {
 		s.logf("  read first message: %v", err)
@@ -352,7 +404,7 @@ func (s *Session) downloadFromPeer(p tracker.Peer) {
 		return
 	}
 
-	ch := make(chan *peer.Message, 64)
+	ch := make(chan *peer.Message, s.cfg.MsgChanSize)
 	errCh := make(chan error, 1)
 	go s.readPeerMessages(pc, ch, errCh)
 
@@ -408,18 +460,18 @@ func (s *Session) downloadPiece(pc *peer.PeerConn, msgCh chan *peer.Message, err
 	expectedHash := s.Torrent.PieceHash(index)
 
 	data := make([]byte, pieceLen)
-	const blockSize = 16384
+	blockSize := int64(s.cfg.BlockSize)
 
 	received := int64(0)
 	requested := int64(0)
 	outstanding := 0
-	const maxOutstanding = 5
+	maxOutstanding := s.cfg.PipelineDepth
 
 	for received < pieceLen {
 		for outstanding < maxOutstanding && requested < pieceLen {
 			size := blockSize
-			if pieceLen-requested < int64(size) {
-				size = int(pieceLen - requested)
+			if pieceLen-requested < size {
+				size = pieceLen - requested
 			}
 
 			msg := &peer.Message{
@@ -432,7 +484,7 @@ func (s *Session) downloadPiece(pc *peer.PeerConn, msgCh chan *peer.Message, err
 				return fmt.Errorf("send request: %w", err)
 			}
 			outstanding++
-			requested += int64(size)
+			requested += size
 		}
 
 		var resp *peer.Message
@@ -440,7 +492,7 @@ func (s *Session) downloadPiece(pc *peer.PeerConn, msgCh chan *peer.Message, err
 		case resp = <-msgCh:
 		case err := <-errCh:
 			return fmt.Errorf("read piece block: %w", err)
-		case <-time.After(60 * time.Second):
+		case <-time.After(s.cfg.PieceTimeout):
 			return fmt.Errorf("timeout waiting for piece block")
 		}
 

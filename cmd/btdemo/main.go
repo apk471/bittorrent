@@ -112,11 +112,12 @@ func main() {
 	}
 
 	fmt.Println("\nStarting download...")
-	sess, err := download.New(tf, outputDir)
+	sess, err := download.New(tf, outputDir, &download.Config{
+		Logger: download.LoggerFunc(log.Printf),
+	})
 	if err != nil {
 		log.Fatalf("Failed to create session: %v", err)
 	}
-	sess.SetLogger(download.LoggerFunc(log.Printf))
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
@@ -169,11 +170,10 @@ func verifyCmd(torrentPath, outputDir string) {
 		log.Fatalf("Error parsing torrent: %v", err)
 	}
 
-	sess, err := download.New(tf, outputDir)
+	sess, err := download.New(tf, outputDir, nil)
 	if err != nil {
 		log.Fatalf("Error creating session: %v", err)
 	}
-	sess.SetLogger(download.LoggerFunc(log.Printf))
 
 	fmt.Println("Verifying downloaded pieces...")
 	total, checked, failed, err := sess.VerifyAll()
