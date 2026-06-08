@@ -75,17 +75,35 @@ func (c *Config) defaults() {
 // Session orchestrates a full BitTorrent download: tracker announces,
 // peer connections, piece selection, and storage I/O.
 type Session struct {
-	Torrent   *torrent.TorrentFile
-	PieceMgr  *piece.Manager
-	Storage   *storage.Storage
-	PeerID    [20]byte
-	client    *tracker.TrackerClient
-	OutputDir string
-	StopCh    chan struct{}
+	torrent    *torrent.TorrentFile
+	pieceMgr   *piece.Manager
+	storage    *storage.Storage
+	peerID     [20]byte
+	client     *tracker.TrackerClient
+	outputDir  string
+	stopCh     chan struct{}
 	trackerURL string
 	cfg        Config
 	log        Logger
 }
+
+// Torrent returns the parsed torrent metadata.
+func (s *Session) Torrent() *torrent.TorrentFile { return s.torrent }
+
+// PieceMgr returns the piece manager.
+func (s *Session) PieceMgr() *piece.Manager { return s.pieceMgr }
+
+// Storage returns the storage engine.
+func (s *Session) Storage() *storage.Storage { return s.storage }
+
+// PeerID returns the peer ID used by this session.
+func (s *Session) PeerID() [20]byte { return s.peerID }
+
+// OutputDir returns the output directory path.
+func (s *Session) OutputDir() string { return s.outputDir }
+
+// StopCh returns a channel that is closed when Stop is called.
+func (s *Session) StopCh() <-chan struct{} { return s.stopCh }
 
 // SetLogger sets the logger for the session. Pass nil to disable logging.
 func (s *Session) SetLogger(l Logger) { s.log = l }
@@ -127,13 +145,13 @@ func New(tf *torrent.TorrentFile, outputDir string, cfg *Config) (*Session, erro
 	}
 
 	return &Session{
-		Torrent:    tf,
-		PieceMgr:   pm,
-		Storage:    st,
-		PeerID:     peerID,
+		torrent:    tf,
+		pieceMgr:   pm,
+		storage:    st,
+		peerID:     peerID,
 		client:     client,
-		OutputDir:  outputDir,
-		StopCh:     make(chan struct{}),
+		outputDir:  outputDir,
+		stopCh:     make(chan struct{}),
 		trackerURL: tf.TrackerURL(),
 		cfg:        *cfg,
 		log:        cfg.Logger,
@@ -143,27 +161,27 @@ func New(tf *torrent.TorrentFile, outputDir string, cfg *Config) (*Session, erro
 // Stop signals all workers to shut down gracefully.
 func (s *Session) Stop() {
 	select {
-	case <-s.StopCh:
+	case <-s.stopCh:
 	default:
-		close(s.StopCh)
+		close(s.stopCh)
 	}
 }
 
 // VerifyAll checks SHA-1 hashes for all Have-marked pieces on disk.
 func (s *Session) VerifyAll() (total, checked, failed int, err error) {
-	numPieces := s.Torrent.NumPieces()
+	numPieces := s.torrent.NumPieces()
 	for i := 0; i < numPieces; i++ {
-		if !s.PieceMgr.Have(i) {
+		if !s.pieceMgr.Have(i) {
 			continue
 		}
 		checked++
-		data, err := s.Storage.ReadPiece(i, s.Torrent.Info.PieceLength)
+		data, err := s.storage.ReadPiece(i, s.torrent.Info.PieceLength)
 		if err != nil {
 			failed++
 			continue
 		}
-		expected := s.Torrent.PieceHash(i)
-		if !s.Storage.VerifyPiece(data, expected) {
+		expected := s.torrent.PieceHash(i)
+		if !s.storage.VerifyPiece(data, expected) {
 			failed++
 		}
 	}
@@ -173,26 +191,26 @@ func (s *Session) VerifyAll() (total, checked, failed int, err error) {
 // Resume scans storage for existing pieces, verifies SHA-1 hashes,
 // and marks valid pieces as downloaded.
 func (s *Session) Resume() (int, error) {
-	if !s.Storage.Exists() {
+	if !s.storage.Exists() {
 		return 0, nil
 	}
-	numPieces := s.Torrent.NumPieces()
+	numPieces := s.torrent.NumPieces()
 	restored := 0
 	for i := 0; i < numPieces; i++ {
-		data, err := s.Storage.ReadPiece(i, s.Torrent.Info.PieceLength)
+		data, err := s.storage.ReadPiece(i, s.torrent.Info.PieceLength)
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return restored, fmt.Errorf("read piece %d during resume: %w", i, err)
 		}
-		pieceLen := s.PieceMgr.PieceLength(i)
+		pieceLen := s.pieceMgr.PieceLength(i)
 		if int64(len(data)) != pieceLen {
 			continue
 		}
-		expected := s.Torrent.PieceHash(i)
-		if s.Storage.VerifyPiece(data, expected) {
-			s.PieceMgr.MarkDownloaded(i)
+		expected := s.torrent.PieceHash(i)
+		if s.storage.VerifyPiece(data, expected) {
+			s.pieceMgr.MarkDownloaded(i)
 			restored++
 		}
 	}
@@ -215,7 +233,7 @@ func (s *Session) Run() error {
 	}
 	_ = restored
 
-	if s.PieceMgr.Complete() {
+	if s.pieceMgr.Complete() {
 		s.logf("All pieces already downloaded")
 		return nil
 	}
@@ -228,11 +246,11 @@ func (s *Session) Run() error {
 		go func() {
 			defer wg.Done()
 			for {
-				if s.PieceMgr.Complete() {
+				if s.pieceMgr.Complete() {
 					return
 				}
 				select {
-				case <-s.StopCh:
+				case <-s.stopCh:
 					return
 				case p, ok := <-peers:
 					if !ok {
@@ -253,10 +271,10 @@ func (s *Session) Run() error {
 
 		announce := func(event string) {
 			resp, err := s.client.Announce(s.trackerURL, &tracker.AnnounceRequest{
-				InfoHash: s.Torrent.InfoHash,
+				InfoHash: s.torrent.InfoHash,
 				Port:     uint16(s.cfg.PortOffset + rand.Intn(100)),
 				Uploaded: 0,
-				Left:     s.Torrent.TotalSize(),
+				Left:     s.torrent.TotalSize(),
 				Event:    event,
 			})
 			if err != nil {
@@ -287,11 +305,11 @@ func (s *Session) Run() error {
 
 		for {
 			select {
-			case <-s.StopCh:
+			case <-s.stopCh:
 				announce("stopped")
 				return
 			case <-time.After(interval):
-				if s.PieceMgr.Complete() {
+				if s.pieceMgr.Complete() {
 					announce("completed")
 					return
 				}
@@ -304,10 +322,10 @@ func (s *Session) Run() error {
 	s.Stop()
 	trackerWg.Wait()
 
-	if s.PieceMgr.Complete() {
+	if s.pieceMgr.Complete() {
 		return nil
 	}
-	return fmt.Errorf("download incomplete: %.1f%% done", s.PieceMgr.Progress())
+	return fmt.Errorf("download incomplete: %.1f%% done", s.pieceMgr.Progress())
 }
 
 func (s *Session) parsePeerBitfield(msg *peer.Message, numPieces int) []bool {
@@ -356,7 +374,7 @@ func (s *Session) waitForUnchoke(pc *peer.PeerConn, msgCh chan *peer.Message, er
 		case err := <-errCh:
 			s.logf("  error waiting for unchoke: %v", err)
 			return false
-		case <-s.StopCh:
+		case <-s.stopCh:
 			s.logf("  download stopped while waiting for unchoke")
 			return false
 		case <-time.After(s.cfg.ReadTimeout):
@@ -370,14 +388,15 @@ func (s *Session) downloadFromPeer(p tracker.Peer) {
 	addr := net.JoinHostPort(p.IP.String(), fmt.Sprintf("%d", p.Port))
 	s.logf("Connecting to peer %s", addr)
 
-	pc, err := peer.Dial(addr, s.Torrent.InfoHash, s.PeerID, s.cfg.DialTimeout)
+	pc, err := peer.Dial(addr, s.torrent.InfoHash, s.peerID, s.cfg.DialTimeout)
 	if err != nil {
 		s.logf("  connect failed: %v", err)
 		return
 	}
 	defer pc.Close()
 
-	s.logf("  connected, peer ID: %x", pc.RemoteID)
+	remoteID := pc.RemoteID()
+	s.logf("  connected, peer ID: %x", remoteID)
 
 	pc.SetReadTimeout(s.cfg.ReadTimeout)
 	firstMsg, err := pc.ReadMessage()
@@ -385,7 +404,7 @@ func (s *Session) downloadFromPeer(p tracker.Peer) {
 		s.logf("  read first message: %v", err)
 		return
 	}
-	peerBitfield := s.parsePeerBitfield(firstMsg, s.Torrent.NumPieces())
+	peerBitfield := s.parsePeerBitfield(firstMsg, s.torrent.NumPieces())
 
 	have := 0
 	for _, b := range peerBitfield {
@@ -397,7 +416,7 @@ func (s *Session) downloadFromPeer(p tracker.Peer) {
 	if firstMsg != nil {
 		firstMsgID = firstMsg.ID.String()
 	}
-	s.logf("  peer has %d/%d pieces (first msg: %s)", have, s.Torrent.NumPieces(), firstMsgID)
+	s.logf("  peer has %d/%d pieces (first msg: %s)", have, s.torrent.NumPieces(), firstMsgID)
 
 	if have == 0 {
 		s.logf("  peer has no pieces, skipping")
@@ -412,7 +431,7 @@ func (s *Session) downloadFromPeer(p tracker.Peer) {
 		ch <- firstMsg
 	}
 
-	s.PieceMgr.UpdatePeerBitfield(string(pc.RemoteID[:]), peerBitfield)
+	s.pieceMgr.UpdatePeerBitfield(string(remoteID[:]), peerBitfield)
 
 	if err := pc.SendMessage(&peer.Message{ID: peer.MsgInterested}); err != nil {
 		s.logf("  send interested failed: %v", err)
@@ -427,37 +446,38 @@ func (s *Session) downloadFromPeer(p tracker.Peer) {
 	s.logf("  unchoked, starting download")
 
 	for {
-		if s.PieceMgr.Complete() {
+		if s.pieceMgr.Complete() {
 			return
 		}
 
 		select {
-		case <-s.StopCh:
+		case <-s.stopCh:
 			s.logf("  download stopped")
 			return
 		default:
 		}
 
-		pieceIndex, ok := s.PieceMgr.PickPiece(peerBitfield)
+		pieceIndex, ok := s.pieceMgr.PickPiece(peerBitfield)
 		if !ok {
 			s.logf("  no more pieces to download from this peer")
 			return
 		}
 
-		s.logf("  downloading piece %d/%d", pieceIndex, s.Torrent.NumPieces()-1)
+		s.logf("  downloading piece %d/%d", pieceIndex, s.torrent.NumPieces()-1)
 
 		if err := s.downloadPiece(pc, ch, errCh, pieceIndex); err != nil {
 			s.logf("  piece %d failed: %v", pieceIndex, err)
-			s.PieceMgr.ReleasePiece(pieceIndex)
-			s.PieceMgr.RemovePeer(string(pc.RemoteID[:]))
+			s.pieceMgr.ReleasePiece(pieceIndex)
+			s.pieceMgr.RemovePeer(string(remoteID[:]))
 			return
 		}
 	}
 }
 
 func (s *Session) downloadPiece(pc *peer.PeerConn, msgCh chan *peer.Message, errCh chan error, index int) error {
-	pieceLen := s.PieceMgr.PieceLength(index)
-	expectedHash := s.Torrent.PieceHash(index)
+	pieceLen := s.pieceMgr.PieceLength(index)
+	expectedHash := s.torrent.PieceHash(index)
+	remoteID := pc.RemoteID()
 
 	data := make([]byte, pieceLen)
 	blockSize := int64(s.cfg.BlockSize)
@@ -511,19 +531,19 @@ func (s *Session) downloadPiece(pc *peer.PeerConn, msgCh chan *peer.Message, err
 		case peer.MsgChoke:
 			return fmt.Errorf("peer choked us")
 		case peer.MsgHave:
-			s.PieceMgr.PeerHasPiece(string(pc.RemoteID[:]), int(resp.Index))
+			s.pieceMgr.PeerHasPiece(string(remoteID[:]), int(resp.Index))
 		}
 	}
 
-	if !s.Storage.VerifyPiece(data, expectedHash) {
+	if !s.storage.VerifyPiece(data, expectedHash) {
 		return fmt.Errorf("hash mismatch for piece %d", index)
 	}
 
-	if err := s.Storage.WritePiece(index, data, s.Torrent.Info.PieceLength); err != nil {
+	if err := s.storage.WritePiece(index, data, s.torrent.Info.PieceLength); err != nil {
 		return fmt.Errorf("write piece %d: %w", index, err)
 	}
 
-	s.PieceMgr.MarkDownloaded(index)
-	s.logf("  piece %d complete (%.1f%%)", index, s.PieceMgr.Progress())
+	s.pieceMgr.MarkDownloaded(index)
+	s.logf("  piece %d complete (%.1f%%)", index, s.pieceMgr.Progress())
 	return nil
 }

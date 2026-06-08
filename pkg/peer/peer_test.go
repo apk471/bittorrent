@@ -274,8 +274,8 @@ func TestDialAndHandshake(t *testing.T) {
 	}
 	defer pc.Close()
 
-	if pc.RemoteID != remoteID {
-		t.Fatalf("expected remoteID %x, got %x", remoteID, pc.RemoteID)
+	if pc.RemoteID() != remoteID {
+		t.Fatalf("expected remoteID %x, got %x", remoteID, pc.RemoteID())
 	}
 }
 
