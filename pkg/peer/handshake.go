@@ -78,7 +78,7 @@ func DoHandshake(conn net.Conn, infoHash, peerID [20]byte) (*Handshake, error) {
 	}
 
 	if hs.InfoHash != infoHash {
-		return nil, fmt.Errorf("handshake: info hash mismatch")
+		return nil, ErrInfoHashMismatch
 	}
 
 	return &hs, nil
