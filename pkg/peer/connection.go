@@ -12,15 +12,24 @@ import (
 // PeerConn is a BitTorrent peer wire-protocol connection.
 type PeerConn struct {
 	conn       net.Conn
-	InfoHash   [20]byte
-	PeerID     [20]byte
-	RemoteID   [20]byte
-	Choked     bool
-	Interested bool
+	infoHash   [20]byte
+	peerID     [20]byte
+	remoteID   [20]byte
+	choked     bool
+	interested bool
 	closed     bool
 	mu         sync.Mutex
 	bufReader  io.Reader
 }
+
+// RemoteID returns the peer's ID as received in the handshake.
+func (pc *PeerConn) RemoteID() [20]byte { return pc.remoteID }
+
+// Choked returns true if the peer has choked us.
+func (pc *PeerConn) Choked() bool { return pc.choked }
+
+// Interested returns true if we have expressed interest to the peer.
+func (pc *PeerConn) Interested() bool { return pc.interested }
 
 // Dial connects to a peer, performs the BitTorrent handshake,
 // and returns an established connection.
@@ -32,9 +41,9 @@ func Dial(addr string, infoHash, peerID [20]byte, timeout time.Duration) (*PeerC
 
 	pc := &PeerConn{
 		conn:      conn,
-		InfoHash:  infoHash,
-		PeerID:    peerID,
-		Choked:    true,
+		infoHash:  infoHash,
+		peerID:    peerID,
+		choked:    true,
 		bufReader: conn,
 	}
 
@@ -49,7 +58,7 @@ func Dial(addr string, infoHash, peerID [20]byte, timeout time.Duration) (*PeerC
 		return nil, fmt.Errorf("peer: handshake: %w", err)
 	}
 
-	pc.RemoteID = hs.PeerID
+	pc.remoteID = hs.PeerID
 
 	if err := conn.SetDeadline(time.Time{}); err != nil {
 		conn.Close()
