@@ -9,6 +9,12 @@ import (
 	"time"
 )
 
+// Sentinel errors returned by peer package functions.
+var (
+	ErrConnectionClosed  = errors.New("peer: connection closed")
+	ErrInfoHashMismatch  = errors.New("handshake: info hash mismatch")
+)
+
 // PeerConn is a BitTorrent peer wire-protocol connection.
 type PeerConn struct {
 	conn       net.Conn
@@ -87,7 +93,7 @@ func (pc *PeerConn) SendMessage(msg *Message) error {
 	defer pc.mu.Unlock()
 
 	if pc.closed {
-		return errors.New("peer: connection closed")
+		return ErrConnectionClosed
 	}
 	return SendMessage(pc.conn, msg)
 }

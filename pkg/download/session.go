@@ -27,6 +27,13 @@ type LoggerFunc func(format string, v ...any)
 
 func (f LoggerFunc) Printf(format string, v ...any) { f(format, v...) }
 
+// Sentinel errors returned by the download package.
+var (
+	ErrTrackerless = errors.New("no tracker URL (trackerless torrents not supported)")
+	ErrTimeout     = errors.New("timeout waiting for piece block")
+	ErrPeerChoked  = errors.New("peer choked us")
+)
+
 // Config contains configurable parameters for a Session.
 // Zero values use sensible defaults.
 type Config struct {
@@ -224,7 +231,7 @@ func (s *Session) Resume() (int, error) {
 // worker goroutines, and downloads pieces until completion or stop.
 func (s *Session) Run() error {
 	if s.trackerURL == "" {
-		return fmt.Errorf("no tracker URL (trackerless torrents not supported)")
+		return ErrTrackerless
 	}
 
 	restored, err := s.Resume()
@@ -513,7 +520,7 @@ func (s *Session) downloadPiece(pc *peer.PeerConn, msgCh chan *peer.Message, err
 		case err := <-errCh:
 			return fmt.Errorf("read piece block: %w", err)
 		case <-time.After(s.cfg.PieceTimeout):
-			return fmt.Errorf("timeout waiting for piece block")
+			return ErrTimeout
 		}
 
 		if resp == nil {
@@ -529,7 +536,7 @@ func (s *Session) downloadPiece(pc *peer.PeerConn, msgCh chan *peer.Message, err
 			copy(data[resp.Begin:], resp.Payload)
 			received += int64(len(resp.Payload))
 		case peer.MsgChoke:
-			return fmt.Errorf("peer choked us")
+			return ErrPeerChoked
 		case peer.MsgHave:
 			s.pieceMgr.PeerHasPiece(string(remoteID[:]), int(resp.Index))
 		}
