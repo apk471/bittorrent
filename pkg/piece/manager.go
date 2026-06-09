@@ -103,6 +103,43 @@ func (pm *Manager) ReleasePiece(index int) {
 	}
 }
 
+// MissingCount returns the number of pieces not yet downloaded.
+func (pm *Manager) MissingCount() int {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	count := 0
+	for _, s := range pm.state {
+		if s != Have {
+			count++
+		}
+	}
+	return count
+}
+
+// PickAnyMissing selects any non-Have piece available from the peer,
+// including pieces already InProgress by another worker.
+// Unlike PickPiece, this does NOT mark the piece InProgress.
+// Use during endgame mode when multiple peers should work the same piece.
+func (pm *Manager) PickAnyMissing(peerBitfield []bool) (int, bool) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	var candidates []int
+	for i := 0; i < pm.numPieces; i++ {
+		if pm.state[i] == Have {
+			continue
+		}
+		if i >= len(peerBitfield) || !peerBitfield[i] {
+			continue
+		}
+		candidates = append(candidates, i)
+	}
+	if len(candidates) == 0 {
+		return 0, false
+	}
+	return candidates[rand.Intn(len(candidates))], true
+}
+
 // Progress returns the download progress as a percentage (0-100).
 func (pm *Manager) Progress() float64 {
 	pm.mu.Lock()
