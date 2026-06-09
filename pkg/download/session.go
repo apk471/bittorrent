@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/apk471/bittorrent/pkg/peer"
@@ -37,16 +38,17 @@ var (
 // Config contains configurable parameters for a Session.
 // Zero values use sensible defaults.
 type Config struct {
-	NumWorkers    int
-	BlockSize     int
-	PipelineDepth int
-	PeerChanSize  int
-	MsgChanSize   int
-	PortOffset    int
-	DialTimeout   time.Duration
-	ReadTimeout   time.Duration
-	PieceTimeout  time.Duration
-	Logger        Logger
+	NumWorkers       int
+	BlockSize        int
+	PipelineDepth    int
+	PeerChanSize     int
+	MsgChanSize      int
+	PortOffset       int
+	DialTimeout      time.Duration
+	ReadTimeout      time.Duration
+	PieceTimeout     time.Duration
+	EndgameThreshold int
+	Logger           Logger
 }
 
 func (c *Config) defaults() {
@@ -77,6 +79,9 @@ func (c *Config) defaults() {
 	if c.PieceTimeout <= 0 {
 		c.PieceTimeout = 60 * time.Second
 	}
+	if c.EndgameThreshold <= 0 {
+		c.EndgameThreshold = 20
+	}
 }
 
 // Session orchestrates a full BitTorrent download: tracker announces,
@@ -92,6 +97,10 @@ type Session struct {
 	trackerURL string
 	cfg        Config
 	log        Logger
+
+	endgame        atomic.Bool
+	receivedBlocks map[int][]bool
+	receivedMu     sync.Mutex
 }
 
 // Torrent returns the parsed torrent metadata.
@@ -111,6 +120,32 @@ func (s *Session) OutputDir() string { return s.outputDir }
 
 // StopCh returns a channel that is closed when Stop is called.
 func (s *Session) StopCh() <-chan struct{} { return s.stopCh }
+
+func (s *Session) blockAlreadyReceived(index int, begin int64) bool {
+	s.receivedMu.Lock()
+	defer s.receivedMu.Unlock()
+	blocks, ok := s.receivedBlocks[index]
+	if !ok {
+		return false
+	}
+	blockIndex := begin / int64(s.cfg.BlockSize)
+	return blockIndex < int64(len(blocks)) && blocks[blockIndex]
+}
+
+func (s *Session) markBlockReceived(index int, begin int64) {
+	s.receivedMu.Lock()
+	defer s.receivedMu.Unlock()
+	blocks, ok := s.receivedBlocks[index]
+	if !ok {
+		numBlocks := (s.pieceMgr.PieceLength(index) + int64(s.cfg.BlockSize) - 1) / int64(s.cfg.BlockSize)
+		blocks = make([]bool, numBlocks)
+		s.receivedBlocks[index] = blocks
+	}
+	blockIndex := begin / int64(s.cfg.BlockSize)
+	if blockIndex < int64(len(blocks)) {
+		blocks[blockIndex] = true
+	}
+}
 
 // SetLogger sets the logger for the session. Pass nil to disable logging.
 func (s *Session) SetLogger(l Logger) { s.log = l }
@@ -466,15 +501,23 @@ func (s *Session) downloadFromPeer(p tracker.Peer) {
 
 		pieceIndex, ok := s.pieceMgr.PickPiece(peerBitfield)
 		if !ok {
-			s.logf("  no more pieces to download from this peer")
-			return
+			if s.pieceMgr.MissingCount() <= s.cfg.EndgameThreshold {
+				s.endgame.Store(true)
+				pieceIndex, ok = s.pieceMgr.PickAnyMissing(peerBitfield)
+			}
+			if !ok {
+				s.logf("  no more pieces to download from this peer")
+				return
+			}
 		}
 
 		s.logf("  downloading piece %d/%d", pieceIndex, s.torrent.NumPieces()-1)
 
 		if err := s.downloadPiece(pc, ch, errCh, pieceIndex); err != nil {
 			s.logf("  piece %d failed: %v", pieceIndex, err)
-			s.pieceMgr.ReleasePiece(pieceIndex)
+			if !s.endgame.Load() {
+				s.pieceMgr.ReleasePiece(pieceIndex)
+			}
 			s.pieceMgr.RemovePeer(string(remoteID[:]))
 			return
 		}
@@ -482,6 +525,9 @@ func (s *Session) downloadFromPeer(p tracker.Peer) {
 }
 
 func (s *Session) downloadPiece(pc *peer.PeerConn, msgCh chan *peer.Message, errCh chan error, index int) error {
+	if s.pieceMgr.Have(index) {
+		return nil
+	}
 	pieceLen := s.pieceMgr.PieceLength(index)
 	expectedHash := s.torrent.PieceHash(index)
 	remoteID := pc.RemoteID()
@@ -529,12 +575,18 @@ func (s *Session) downloadPiece(pc *peer.PeerConn, msgCh chan *peer.Message, err
 		switch resp.ID {
 		case peer.MsgPiece:
 			outstanding--
+			if s.endgame.Load() && s.blockAlreadyReceived(index, int64(resp.Begin)) {
+				continue
+			}
 			end := int(resp.Begin) + len(resp.Payload)
 			if end > len(data) {
 				return fmt.Errorf("block exceeds piece buffer: begin=%d len=%d cap=%d", resp.Begin, len(resp.Payload), len(data))
 			}
 			copy(data[resp.Begin:], resp.Payload)
 			received += int64(len(resp.Payload))
+			if s.endgame.Load() {
+				s.markBlockReceived(index, int64(resp.Begin))
+			}
 		case peer.MsgChoke:
 			return ErrPeerChoked
 		case peer.MsgHave:
@@ -551,6 +603,9 @@ func (s *Session) downloadPiece(pc *peer.PeerConn, msgCh chan *peer.Message, err
 	}
 
 	s.pieceMgr.MarkDownloaded(index)
+	s.receivedMu.Lock()
+	delete(s.receivedBlocks, index)
+	s.receivedMu.Unlock()
 	s.logf("  piece %d complete (%.1f%%)", index, s.pieceMgr.Progress())
 	return nil
 }
