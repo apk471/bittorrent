@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/apk471/bittorrent/pkg/dht"
 	"github.com/apk471/bittorrent/pkg/peer"
 	"github.com/apk471/bittorrent/pkg/piece"
 	"github.com/apk471/bittorrent/pkg/storage"
@@ -97,6 +98,8 @@ type Session struct {
 	trackerURL string
 	cfg        Config
 	log        Logger
+
+	dhtNode *dht.DHT
 
 	endgame        atomic.Bool
 	receivedBlocks map[int][]bool
@@ -207,6 +210,9 @@ func (s *Session) Stop() {
 	default:
 		close(s.stopCh)
 	}
+	if s.dhtNode != nil {
+		s.dhtNode.Stop()
+	}
 }
 
 // VerifyAll checks SHA-1 hashes for all Have-marked pieces on disk.
@@ -262,13 +268,9 @@ func (s *Session) Resume() (int, error) {
 	return restored, nil
 }
 
-// Run starts the download session: announces to the tracker, spawns
-// worker goroutines, and downloads pieces until completion or stop.
+// Run starts the download session: announces to the tracker and/or DHT,
+// spawns worker goroutines, and downloads pieces until completion or stop.
 func (s *Session) Run() error {
-	if s.trackerURL == "" {
-		return ErrTrackerless
-	}
-
 	restored, err := s.Resume()
 	if err != nil {
 		return fmt.Errorf("resume: %w", err)
@@ -304,70 +306,108 @@ func (s *Session) Run() error {
 		}()
 	}
 
-	var trackerWg sync.WaitGroup
-	trackerWg.Add(1)
-	go func() {
-		defer trackerWg.Done()
-		defer close(peers)
-		interval := 30 * time.Second
+	var sourceWg sync.WaitGroup
 
-		announce := func(event string) {
-			resp, err := s.client.Announce(s.trackerURL, &tracker.AnnounceRequest{
-				InfoHash: s.torrent.InfoHash,
-				Port:     uint16(s.cfg.PortOffset + rand.Intn(100)),
-				Uploaded: 0,
-				Left:     s.torrent.TotalSize(),
-				Event:    event,
-			})
-			if err != nil {
-				s.logf("Tracker announce failed: %v", err)
-				return
-			}
-			if resp.Interval > 0 {
-				interval = time.Duration(resp.Interval) * time.Second
-			}
-			s.logf("Got %d peers from tracker (%d seeders, %d leechers)",
-				len(resp.Peers), resp.Complete, resp.Incomplete)
+	switch {
+	case s.trackerURL != "":
+		sourceWg.Add(1)
+		go func() {
+			defer sourceWg.Done()
+			defer close(peers)
+			s.runTracker(peers)
+		}()
 
-			shuffled := make([]tracker.Peer, len(resp.Peers))
-			copy(shuffled, resp.Peers)
-			rand.Shuffle(len(shuffled), func(i, j int) {
-				shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
-			})
-
-			for _, p := range shuffled {
-				select {
-				case peers <- p:
-				default:
-				}
-			}
-		}
-
-		announce("started")
-
-		for {
-			select {
-			case <-s.stopCh:
-				announce("stopped")
-				return
-			case <-time.After(interval):
-				if s.pieceMgr.Complete() {
-					announce("completed")
-					return
-				}
-				announce("")
-			}
-		}
-	}()
+	default:
+		sourceWg.Add(1)
+		go func() {
+			defer sourceWg.Done()
+			defer close(peers)
+			s.runDHT(peers)
+		}()
+	}
 
 	wg.Wait()
 	s.Stop()
-	trackerWg.Wait()
+	sourceWg.Wait()
 
 	if s.pieceMgr.Complete() {
 		return nil
 	}
 	return fmt.Errorf("download incomplete: %.1f%% done", s.pieceMgr.Progress())
+}
+
+func (s *Session) runTracker(peers chan<- tracker.Peer) {
+	interval := 30 * time.Second
+
+	announce := func(event string) {
+		resp, err := s.client.Announce(s.trackerURL, &tracker.AnnounceRequest{
+			InfoHash: s.torrent.InfoHash,
+			Port:     uint16(s.cfg.PortOffset + rand.Intn(100)),
+			Uploaded: 0,
+			Left:     s.torrent.TotalSize(),
+			Event:    event,
+		})
+		if err != nil {
+			s.logf("Tracker announce failed: %v", err)
+			return
+		}
+		if resp.Interval > 0 {
+			interval = time.Duration(resp.Interval) * time.Second
+		}
+		s.logf("Got %d peers from tracker (%d seeders, %d leechers)",
+			len(resp.Peers), resp.Complete, resp.Incomplete)
+
+		shuffled := make([]tracker.Peer, len(resp.Peers))
+		copy(shuffled, resp.Peers)
+		rand.Shuffle(len(shuffled), func(i, j int) {
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		})
+
+		for _, p := range shuffled {
+			select {
+			case peers <- p:
+			default:
+			}
+		}
+	}
+
+	announce("started")
+
+	for {
+		select {
+		case <-s.stopCh:
+			announce("stopped")
+			return
+		case <-time.After(interval):
+			if s.pieceMgr.Complete() {
+				announce("completed")
+				return
+			}
+			announce("")
+		}
+	}
+}
+
+func (s *Session) runDHT(peers chan<- tracker.Peer) {
+	s.logf("Starting DHT node for trackerless torrent...")
+
+	dhtNode, err := dht.New(s.cfg.PortOffset+rand.Intn(100), peers, s.log)
+	if err != nil {
+		s.logf("DHT: %v", err)
+		return
+	}
+	s.dhtNode = dhtNode
+
+	infoHash := s.torrent.InfoHash
+
+	go func() {
+		time.Sleep(2 * time.Second)
+		dhtNode.GetPeers(infoHash)
+	}()
+
+	if err := dhtNode.Run(); err != nil {
+		s.logf("DHT: %v", err)
+	}
 }
 
 func (s *Session) parsePeerBitfield(msg *peer.Message, numPieces int) []bool {

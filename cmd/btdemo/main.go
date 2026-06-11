@@ -106,11 +106,6 @@ func main() {
 	fmt.Printf("Info Hash:   %x\n", tf.InfoHash)
 	fmt.Printf("Output:      %s\n", outputDir)
 
-	if tf.IsTrackerless() {
-		fmt.Println("\nTrackerless torrents not supported yet.")
-		return
-	}
-
 	fmt.Println("\nStarting download...")
 	sess, err := download.New(tf, outputDir, &download.Config{
 		Logger: download.LoggerFunc(log.Printf),
