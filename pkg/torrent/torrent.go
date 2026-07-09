@@ -3,6 +3,7 @@ package torrent
 import (
 	"crypto/sha1"
 	"fmt"
+	"strings"
 
 	"github.com/apk471/bittorrent/pkg/bencode"
 )
@@ -201,6 +202,31 @@ func (t *TorrentFile) TrackerURL() string {
 		return t.AnnounceList[0][0]
 	}
 	return ""
+}
+
+// HTTPTrackers returns all unique http/https announce URLs from the
+// Announce field and AnnounceList, in order. UDP trackers are skipped
+// because the tracker client only speaks HTTP.
+func (t *TorrentFile) HTTPTrackers() []string {
+	seen := make(map[string]struct{})
+	var urls []string
+	add := func(u string) {
+		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			return
+		}
+		if _, ok := seen[u]; ok {
+			return
+		}
+		seen[u] = struct{}{}
+		urls = append(urls, u)
+	}
+	add(t.Announce)
+	for _, tier := range t.AnnounceList {
+		for _, u := range tier {
+			add(u)
+		}
+	}
+	return urls
 }
 
 // IsTrackerless returns true if no tracker URL is available.

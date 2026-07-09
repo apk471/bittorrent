@@ -95,7 +95,7 @@ type Session struct {
 	client     *tracker.TrackerClient
 	outputDir  string
 	stopCh     chan struct{}
-	trackerURL string
+	trackers   []string
 	cfg        Config
 	log        Logger
 
@@ -197,7 +197,7 @@ func New(tf *torrent.TorrentFile, outputDir string, cfg *Config) (*Session, erro
 		client:     client,
 		outputDir:  outputDir,
 		stopCh:     make(chan struct{}),
-		trackerURL: tf.TrackerURL(),
+		trackers:   tf.HTTPTrackers(),
 		cfg:        *cfg,
 		log:        cfg.Logger,
 	}, nil
@@ -307,24 +307,27 @@ func (s *Session) Run() error {
 	}
 
 	var sourceWg sync.WaitGroup
-
-	switch {
-	case s.trackerURL != "":
+	launch := func(fn func(chan<- tracker.Peer)) {
 		sourceWg.Add(1)
 		go func() {
 			defer sourceWg.Done()
-			defer close(peers)
-			s.runTracker(peers)
-		}()
-
-	default:
-		sourceWg.Add(1)
-		go func() {
-			defer sourceWg.Done()
-			defer close(peers)
-			s.runDHT(peers)
+			fn(peers)
 		}()
 	}
+
+	for _, url := range s.trackers {
+		url := url
+		launch(func(p chan<- tracker.Peer) { s.runTracker(url, p) })
+	}
+	// Always run DHT alongside trackers for extra peer discovery; it is the
+	// only source for trackerless torrents (empty announce lists).
+	launch(func(p chan<- tracker.Peer) { s.runDHT(p) })
+
+	// Close the peers channel once every source has stopped.
+	go func() {
+		sourceWg.Wait()
+		close(peers)
+	}()
 
 	wg.Wait()
 	s.Stop()
@@ -336,11 +339,11 @@ func (s *Session) Run() error {
 	return fmt.Errorf("download incomplete: %.1f%% done", s.pieceMgr.Progress())
 }
 
-func (s *Session) runTracker(peers chan<- tracker.Peer) {
+func (s *Session) runTracker(trackerURL string, peers chan<- tracker.Peer) {
 	interval := 30 * time.Second
 
 	announce := func(event string) {
-		resp, err := s.client.Announce(s.trackerURL, &tracker.AnnounceRequest{
+		resp, err := s.client.Announce(trackerURL, &tracker.AnnounceRequest{
 			InfoHash: s.torrent.InfoHash,
 			Port:     uint16(s.cfg.PortOffset + rand.Intn(100)),
 			Uploaded: 0,
@@ -348,14 +351,14 @@ func (s *Session) runTracker(peers chan<- tracker.Peer) {
 			Event:    event,
 		})
 		if err != nil {
-			s.logf("Tracker announce failed: %v", err)
+			s.logf("Tracker %s announce failed: %v", trackerURL, err)
 			return
 		}
 		if resp.Interval > 0 {
 			interval = time.Duration(resp.Interval) * time.Second
 		}
-		s.logf("Got %d peers from tracker (%d seeders, %d leechers)",
-			len(resp.Peers), resp.Complete, resp.Incomplete)
+		s.logf("Got %d peers from %s (%d seeders, %d leechers)",
+			len(resp.Peers), trackerURL, resp.Complete, resp.Incomplete)
 
 		shuffled := make([]tracker.Peer, len(resp.Peers))
 		copy(shuffled, resp.Peers)
