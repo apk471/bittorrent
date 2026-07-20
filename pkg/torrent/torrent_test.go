@@ -4,7 +4,7 @@ import (
 	"crypto/sha1"
 	"testing"
 
-	"github.com/apk471/bittorrent/pkg/bencode"
+	"github.com/ayush-amin/bittorrent/pkg/bencode"
 )
 
 func makePieces(count int) []byte {

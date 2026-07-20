@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/apk471/bittorrent/pkg/bencode"
-	"github.com/apk471/bittorrent/pkg/tracker"
+	"github.com/ayush-amin/bittorrent/pkg/bencode"
+	"github.com/ayush-amin/bittorrent/pkg/tracker"
 )
 
 // Logger is the interface for DHT logging. Pass nil to disable.

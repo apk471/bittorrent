@@ -3,7 +3,7 @@
 ## Project Overview
 
 This repository is a BitTorrent client library and demo CLI written in Go.
-The module path is `github.com/apk471/bittorrent`.
+The module path is `github.com/ayush-amin/bittorrent`.
 
 Core package responsibilities:
 
