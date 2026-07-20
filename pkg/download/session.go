@@ -11,12 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/apk471/bittorrent/pkg/dht"
-	"github.com/apk471/bittorrent/pkg/peer"
-	"github.com/apk471/bittorrent/pkg/piece"
-	"github.com/apk471/bittorrent/pkg/storage"
-	"github.com/apk471/bittorrent/pkg/torrent"
-	"github.com/apk471/bittorrent/pkg/tracker"
+	"github.com/ayush-amin/bittorrent/pkg/dht"
+	"github.com/ayush-amin/bittorrent/pkg/peer"
+	"github.com/ayush-amin/bittorrent/pkg/piece"
+	"github.com/ayush-amin/bittorrent/pkg/storage"
+	"github.com/ayush-amin/bittorrent/pkg/torrent"
+	"github.com/ayush-amin/bittorrent/pkg/tracker"
 )
 
 // Logger is the interface for logging. Pass nil to disable all logging.

@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/apk471/bittorrent/pkg/bencode"
+	"github.com/ayush-amin/bittorrent/pkg/bencode"
 )
 
 // TrackerClient communicates with an HTTP tracker.

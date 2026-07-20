@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/apk471/bittorrent/pkg/bencode"
+	"github.com/ayush-amin/bittorrent/pkg/bencode"
 )
 
 // TorrentFile represents a parsed .torrent file.

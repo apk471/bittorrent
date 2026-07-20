@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"runtime/debug"
 
-	"github.com/apk471/bittorrent/pkg/download"
-	"github.com/apk471/bittorrent/pkg/torrent"
+	"github.com/ayush-amin/bittorrent/pkg/download"
+	"github.com/ayush-amin/bittorrent/pkg/torrent"
 )
 
 var ldVersion = "" // set via -ldflags during make build
@@ -25,7 +25,7 @@ func programVersion() string {
 		return info.Main.Version
 	}
 	for _, dep := range info.Deps {
-		if dep.Path == "github.com/apk471/bittorrent" && dep.Version != "" {
+		if dep.Path == "github.com/ayush-amin/bittorrent" && dep.Version != "" {
 			return dep.Version
 		}
 	}
